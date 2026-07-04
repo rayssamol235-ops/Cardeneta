@@ -316,6 +316,37 @@
 const CHAVE = 'caderneta_aluguel_dados_v1';
 let registros = [];
 
+function redimensionarImagem(arquivo, callback){
+  const leitor = new FileReader();
+  leitor.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      const MAX_LARGURA = 900;
+      let largura = img.width;
+      let altura = img.height;
+      if(largura > MAX_LARGURA){
+        altura = Math.round(altura * (MAX_LARGURA / largura));
+        largura = MAX_LARGURA;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = largura;
+      canvas.height = altura;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, largura, altura);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      callback(dataUrl);
+    };
+    img.onerror = function(){
+      mostrarToast('Não consegui ler essa foto. Tente outra.');
+    };
+    img.src = e.target.result;
+  };
+  leitor.onerror = function(){
+    mostrarToast('Não consegui abrir essa foto. Tente novamente.');
+  };
+  leitor.readAsDataURL(arquivo);
+}
+
 function carregarDados(){
   try{
     const salvo = localStorage.getItem(CHAVE);
@@ -325,7 +356,13 @@ function carregarDados(){
   }
 }
 function salvarDados(){
-  localStorage.setItem(CHAVE, JSON.stringify(registros));
+  try{
+    localStorage.setItem(CHAVE, JSON.stringify(registros));
+    return true;
+  }catch(e){
+    mostrarToast('Não deu para salvar — o espaço de armazenamento do navegador está cheio.');
+    return false;
+  }
 }
 
 function formatarMoeda(v){
@@ -426,24 +463,27 @@ function iniciarCapturaRapida(tipo){
 function fotoRapidaSelecionada(evt){
   const arquivo = evt.target.files[0];
   if(!arquivo || !tipoCapturaRapidaAtual) return;
-  const leitor = new FileReader();
-  leitor.onload = function(e){
+  mostrarToast('Salvando foto...');
+  redimensionarImagem(arquivo, function(dataUrlComprimido){
     const registro = {
       id: 'id_' + Date.now(),
       tipo: tipoCapturaRapidaAtual,
       data: hojeISO(),
       valor: null,
       obs: '',
-      foto: e.target.result,
+      foto: dataUrlComprimido,
     };
     if(tipoCapturaRapidaAtual === 'entrada'){ registro.quem = ''; }
     else { registro.materiais = ''; }
     registros.push(registro);
-    salvarDados();
+    const ok = salvarDados();
     renderizarTudo();
-    mostrarToast('Foto salva! Toque nela mais tarde para completar os dados.');
-  };
-  leitor.readAsDataURL(arquivo);
+    if(ok){
+      mostrarToast('Foto salva! Toque nela mais tarde para completar os dados.');
+    } else {
+      mostrarToast('Foto ficou na tela, mas não coube no armazenamento do celular.');
+    }
+  });
 }
 
 function mostrarToast(mensagem){
@@ -512,14 +552,13 @@ function fecharFormulario(){
 function carregarFoto(evt){
   const arquivo = evt.target.files[0];
   if(!arquivo) return;
-  const leitor = new FileReader();
-  leitor.onload = function(e){
-    document.getElementById('fotoBase64').value = e.target.result;
-    document.getElementById('previewFoto').src = e.target.result;
+  document.getElementById('fotoStatus').textContent = 'Carregando foto...';
+  redimensionarImagem(arquivo, function(dataUrlComprimido){
+    document.getElementById('fotoBase64').value = dataUrlComprimido;
+    document.getElementById('previewFoto').src = dataUrlComprimido;
     document.getElementById('previewFoto').style.display = 'block';
     document.getElementById('fotoStatus').textContent = 'Foto adicionada';
-  };
-  leitor.readAsDataURL(arquivo);
+  });
 }
 
 function atualizarComissao(){
@@ -558,9 +597,12 @@ function salvarRegistro(evt){
   } else {
     registros.push(registro);
   }
-  salvarDados();
+  const ok = salvarDados();
   renderizarTudo();
   fecharFormulario();
+  if(ok){
+    mostrarToast('Registro salvo!');
+  }
 }
 
 function excluirRegistro(){
