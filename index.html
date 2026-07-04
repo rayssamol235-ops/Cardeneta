@@ -201,6 +201,10 @@
     <p>Toque em um botão para registrar</p>
   </header>
 
+  <div id="avisoArmazenamento" style="display:none; background:#F8D7DA; border:2px solid #B5675A; color:#5A2A24; padding:14px 16px; border-radius:12px; margin-bottom:16px; font-size:14px; font-weight:600; text-align:center;">
+    Atenção: este navegador não está deixando salvar dados de forma permanente (comum em aba anônima/privada). Feche a aba anônima e abra o link normalmente para os dados não se perderem.
+  </div>
+
   <div class="passbook">
     <div class="linha-saldo">
       <span class="rotulo">Total recebido de aluguel</span>
@@ -317,34 +321,74 @@ const CHAVE = 'caderneta_aluguel_dados_v1';
 let registros = [];
 
 function redimensionarImagem(arquivo, callback){
-  const leitor = new FileReader();
-  leitor.onload = function(e){
-    const img = new Image();
-    img.onload = function(){
-      const MAX_LARGURA = 900;
-      let largura = img.width;
-      let altura = img.height;
-      if(largura > MAX_LARGURA){
-        altura = Math.round(altura * (MAX_LARGURA / largura));
-        largura = MAX_LARGURA;
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = largura;
-      canvas.height = altura;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, largura, altura);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-      callback(dataUrl);
+  let finalizado = false;
+
+  function usarOriginalSemComprimir(){
+    if(finalizado) return;
+    const leitorSimples = new FileReader();
+    leitorSimples.onload = function(e){
+      finalizado = true;
+      callback(e.target.result);
     };
-    img.onerror = function(){
-      mostrarToast('Não consegui ler essa foto. Tente outra.');
+    leitorSimples.onerror = function(){
+      finalizado = true;
+      mostrarToast('Não consegui ler essa foto. Tente tirar outra.');
+      callback(null);
     };
-    img.src = e.target.result;
-  };
-  leitor.onerror = function(){
-    mostrarToast('Não consegui abrir essa foto. Tente novamente.');
-  };
-  leitor.readAsDataURL(arquivo);
+    leitorSimples.readAsDataURL(arquivo);
+  }
+
+  try{
+    const leitor = new FileReader();
+    leitor.onload = function(e){
+      const img = new Image();
+      const tempoLimite = setTimeout(usarOriginalSemComprimir, 6000);
+      img.onload = function(){
+        clearTimeout(tempoLimite);
+        if(finalizado) return;
+        try{
+          const MAX_LARGURA = 900;
+          let largura = img.width;
+          let altura = img.height;
+          if(largura > MAX_LARGURA){
+            altura = Math.round(altura * (MAX_LARGURA / largura));
+            largura = MAX_LARGURA;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = largura;
+          canvas.height = altura;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, largura, altura);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          finalizado = true;
+          callback(dataUrl);
+        }catch(erroCanvas){
+          usarOriginalSemComprimir();
+        }
+      };
+      img.onerror = function(){
+        clearTimeout(tempoLimite);
+        usarOriginalSemComprimir();
+      };
+      img.src = e.target.result;
+    };
+    leitor.onerror = function(){
+      usarOriginalSemComprimir();
+    };
+    leitor.readAsDataURL(arquivo);
+  }catch(erroGeral){
+    usarOriginalSemComprimir();
+  }
+}
+
+function localStorageDisponivel(){
+  try{
+    localStorage.setItem('__teste_armazenamento__', '1');
+    localStorage.removeItem('__teste_armazenamento__');
+    return true;
+  }catch(e){
+    return false;
+  }
 }
 
 function carregarDados(){
@@ -777,6 +821,9 @@ function exportarPDF(){
 
 carregarDados();
 renderizarTudo();
+if(!localStorageDisponivel()){
+  document.getElementById('avisoArmazenamento').style.display = 'block';
+}
 </script>
 
 </body>
