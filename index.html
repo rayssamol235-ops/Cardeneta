@@ -77,6 +77,28 @@
   .btn-grande.saida{ background: linear-gradient(160deg, var(--vermelho-suave), var(--vermelho)); }
   .btn-grande .icone{ font-size: 30px; }
 
+  .link-alternativo{
+    display:flex; justify-content:space-between; gap: 14px; margin: -10px 0 20px;
+    padding: 0 4px;
+  }
+  .link-alternativo span{
+    font-size: 12.5px; color: var(--ink-soft); text-decoration: underline;
+    cursor:pointer; flex:1; text-align:center;
+  }
+
+  .toast{
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px);
+    background: var(--verde); color: var(--branco); padding: 14px 22px; border-radius: 14px;
+    font-weight:700; font-size: 15px; box-shadow: var(--sombra); z-index: 80;
+    opacity:0; transition: all .25s ease; pointer-events:none; text-align:center; max-width: 85%;
+  }
+  .toast.mostrar{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  .badge-pendente{
+    display:inline-block; background: var(--dourado); color: var(--branco); font-size: 11px;
+    font-weight:700; padding: 3px 9px; border-radius: 999px; margin-top: 3px;
+  }
+
   .btn-exportar{
     width:100%; padding: 16px; border-radius: 14px; border: 2px solid var(--verde);
     background: var(--branco); color: var(--verde); font-weight:700; font-size:16px;
@@ -199,15 +221,21 @@
   </div>
 
   <div class="botoes-acao">
-    <button class="btn-grande entrada" onclick="abrirFormulario('entrada')">
-      <span class="icone">📥</span>
-      Recebi o Aluguel
+    <button class="btn-grande entrada" onclick="iniciarCapturaRapida('entrada')">
+      <span class="icone">📷</span>
+      Foto do Aluguel Recebido
     </button>
-    <button class="btn-grande saida" onclick="abrirFormulario('saida')">
-      <span class="icone">📤</span>
-      Registrar Nota (Gasto)
+    <button class="btn-grande saida" onclick="iniciarCapturaRapida('saida')">
+      <span class="icone">📷</span>
+      Foto da Nota (Gasto)
     </button>
   </div>
+  <div class="link-alternativo">
+    <span onclick="abrirFormulario('entrada')">Preencher aluguel sem foto agora</span>
+    <span onclick="abrirFormulario('saida')">Preencher nota sem foto agora</span>
+  </div>
+
+  <input type="file" id="capturaRapidaInput" accept="image/*" capture="environment" style="display:none" onchange="fotoRapidaSelecionada(event)">
 
   <button class="btn-exportar" onclick="exportarPDF()">📄 Gerar Relatório em PDF</button>
 
@@ -217,7 +245,10 @@
   </section>
 
   <p class="rodape-info">Todos os dados ficam guardados neste aparelho e neste navegador.</p>
+
 </div>
+
+<div class="toast" id="toast"></div>
 
 <!-- MODAL -->
 <div class="overlay" id="overlay">
@@ -240,7 +271,8 @@
 
       <div class="campo">
         <label for="campoValor">Valor (em ienes, só números)</label>
-        <input type="number" id="campoValor" step="0.01" min="0" required oninput="atualizarComissao()">
+        <input type="number" id="campoValor" step="0.01" min="0" oninput="atualizarComissao()">
+        <span class="ajuda">Pode deixar em branco agora e completar depois, se estiver com pressa</span>
       </div>
 
       <div class="campo" id="campoComissaoBox" style="display:none;">
@@ -303,11 +335,12 @@ function formatarMoeda(v){
 function calcularTotais(){
   let entradas = 0, saidas = 0, comissao = 0;
   registros.forEach(r=>{
+    const v = (r.valor === null || r.valor === undefined || r.valor === '') ? 0 : Number(r.valor);
     if(r.tipo === 'entrada'){
-      entradas += Number(r.valor);
-      comissao += Number(r.valor) * 0.10;
+      entradas += v;
+      comissao += v * 0.10;
     } else {
-      saidas += Number(r.valor);
+      saidas += v;
     }
   });
   const saldo = entradas - comissao - saidas;
@@ -334,28 +367,38 @@ function renderizarHistorico(){
     const foto = r.foto
       ? `<img class="thumb" src="${r.foto}">`
       : `<div class="thumb vazio-foto">🧾</div>`;
+    const incompleto = (r.valor === null || r.valor === undefined || r.valor === '');
+    const badge = incompleto ? `<div class="badge-pendente">Toque para completar</div>` : '';
+
     if(r.tipo === 'entrada'){
-      const com = Number(r.valor) * 0.10;
+      const valores = incompleto
+        ? `<div class="principal" style="color:var(--dourado)">Sem valor</div>`
+        : `<div class="principal">+${formatarMoeda(r.valor)}</div>
+           <div class="comissao">comissão ${formatarMoeda(Number(r.valor) * 0.10)}</div>`;
       return `<div class="item entrada" onclick="abrirParaEdicao('${r.id}')">
         ${foto}
         <div class="info">
           <div class="titulo">${r.quem ? r.quem : 'Aluguel recebido'}</div>
           <div class="sub">${dataFormatada} · Entrada</div>
+          ${badge}
         </div>
         <div class="valores">
-          <div class="principal">+${formatarMoeda(r.valor)}</div>
-          <div class="comissao">comissão ${formatarMoeda(com)}</div>
+          ${valores}
         </div>
       </div>`;
     } else {
+      const valores = incompleto
+        ? `<div class="principal" style="color:var(--dourado)">Sem valor</div>`
+        : `<div class="principal">-${formatarMoeda(r.valor)}</div>`;
       return `<div class="item saida" onclick="abrirParaEdicao('${r.id}')">
         ${foto}
         <div class="info">
           <div class="titulo">${r.materiais ? r.materiais : 'Nota / gasto'}</div>
           <div class="sub">${dataFormatada} · Saída</div>
+          ${badge}
         </div>
         <div class="valores">
-          <div class="principal">-${formatarMoeda(r.valor)}</div>
+          ${valores}
         </div>
       </div>`;
     }
@@ -370,6 +413,45 @@ function renderizarTudo(){
 function hojeISO(){
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+let tipoCapturaRapidaAtual = null;
+
+function iniciarCapturaRapida(tipo){
+  tipoCapturaRapidaAtual = tipo;
+  document.getElementById('capturaRapidaInput').value = '';
+  document.getElementById('capturaRapidaInput').click();
+}
+
+function fotoRapidaSelecionada(evt){
+  const arquivo = evt.target.files[0];
+  if(!arquivo || !tipoCapturaRapidaAtual) return;
+  const leitor = new FileReader();
+  leitor.onload = function(e){
+    const registro = {
+      id: 'id_' + Date.now(),
+      tipo: tipoCapturaRapidaAtual,
+      data: hojeISO(),
+      valor: null,
+      obs: '',
+      foto: e.target.result,
+    };
+    if(tipoCapturaRapidaAtual === 'entrada'){ registro.quem = ''; }
+    else { registro.materiais = ''; }
+    registros.push(registro);
+    salvarDados();
+    renderizarTudo();
+    mostrarToast('Foto salva! Toque nela mais tarde para completar os dados.');
+  };
+  leitor.readAsDataURL(arquivo);
+}
+
+function mostrarToast(mensagem){
+  const toast = document.getElementById('toast');
+  toast.textContent = mensagem;
+  toast.classList.add('mostrar');
+  clearTimeout(window._toastTimeout);
+  window._toastTimeout = setTimeout(()=>{ toast.classList.remove('mostrar'); }, 3200);
 }
 
 function abrirFormulario(tipo){
@@ -455,11 +537,12 @@ function salvarRegistro(evt){
   evt.preventDefault();
   const tipo = document.getElementById('tipoRegistro').value;
   const id = document.getElementById('idEdicao').value || ('id_' + Date.now());
+  const valorDigitado = document.getElementById('campoValor').value;
   const registro = {
     id,
     tipo,
     data: document.getElementById('campoData').value,
-    valor: Number(document.getElementById('campoValor').value),
+    valor: valorDigitado === '' ? null : Number(valorDigitado),
     obs: document.getElementById('campoObs').value.trim(),
     foto: document.getElementById('fotoBase64').value || null,
   };
@@ -570,15 +653,22 @@ function exportarPDF(){
     entradas.forEach(r=>{
       novaPaginaSeNecessario(24);
       const dataF = new Date(r.data+'T00:00:00').toLocaleDateString('pt-BR');
-      const com = Number(r.valor) * 0.10;
-      const liq = Number(r.valor) - com;
+      const incompleto = (r.valor === null || r.valor === undefined || r.valor === '');
       doc.setFont('helvetica','bold');
       doc.setFontSize(10.5);
       doc.text(dataF + '  —  ' + (r.quem || 'Inquilino não informado'), 18, y);
       y += 6;
       doc.setFont('helvetica','normal');
       doc.setFontSize(9.5);
-      doc.text('Valor recebido: ' + formatarMoeda(r.valor) + '   |   Comissão (10%): ' + formatarMoeda(com) + '   |   Fica para o proprietário: ' + formatarMoeda(liq), 20, y);
+      if(incompleto){
+        doc.setTextColor(160,110,40);
+        doc.text('Ainda sem valor preenchido — foto salva, aguardando completar os dados.', 20, y);
+        doc.setTextColor(0);
+      } else {
+        const com = Number(r.valor) * 0.10;
+        const liq = Number(r.valor) - com;
+        doc.text('Valor recebido: ' + formatarMoeda(r.valor) + '   |   Comissão (10%): ' + formatarMoeda(com) + '   |   Fica para o proprietário: ' + formatarMoeda(liq), 20, y);
+      }
       y += 5;
       if(r.obs){
         doc.setTextColor(100);
@@ -613,13 +703,20 @@ function exportarPDF(){
     saidas.forEach(r=>{
       novaPaginaSeNecessario(20);
       const dataF = new Date(r.data+'T00:00:00').toLocaleDateString('pt-BR');
+      const incompleto = (r.valor === null || r.valor === undefined || r.valor === '');
       doc.setFont('helvetica','bold');
       doc.setFontSize(10.5);
       doc.text(dataF + '  —  ' + (r.materiais || 'Gasto não especificado'), 18, y);
       y += 6;
       doc.setFont('helvetica','normal');
       doc.setFontSize(9.5);
-      doc.text('Valor gasto: ' + formatarMoeda(r.valor), 20, y);
+      if(incompleto){
+        doc.setTextColor(160,110,40);
+        doc.text('Ainda sem valor preenchido — foto salva, aguardando completar os dados.', 20, y);
+        doc.setTextColor(0);
+      } else {
+        doc.text('Valor gasto: ' + formatarMoeda(r.valor), 20, y);
+      }
       y += 5;
       if(r.obs){
         doc.setTextColor(100);
